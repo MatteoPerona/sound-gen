@@ -43,8 +43,8 @@ def train():
     adversarial_loss = nn.BCEWithLogitsLoss()
     
     # Optimizers
-    optimizer_G = optim.Adam(generator.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))
-    optimizer_D = optim.Adam(discriminator.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))
+    optimizer_G = optim.Adam(generator.parameters(), lr=G_LEARNING_RATE, betas=(BETA1, BETA2))
+    optimizer_D = optim.Adam(discriminator.parameters(), lr=D_LEARNING_RATE, betas=(BETA1, BETA2))
     
     # Training loop
     print("starting training loop...")
@@ -55,9 +55,9 @@ def train():
             mel_specs = mel_specs.to(device)
             real_audio = real_audio.to(device)
             
-            # Ground truths - no need for sigmoid as BCEWithLogitsLoss includes it
-            valid = torch.ones(batch_size, 1).to(device)
-            fake = torch.zeros(batch_size, 1).to(device)
+            # Ground truths with label smoothing for real samples
+            real_labels = torch.full((batch_size, 1), 0.9).to(device)  # Label smoothing for real samples
+            fake_labels = torch.zeros(batch_size, 1).to(device)  # Keep fake labels at 0
             
             # -----------------
             #  Train Generator
@@ -69,7 +69,7 @@ def train():
             
             # Loss measures generator's ability to fool the discriminator
             pred_fake = discriminator(gen_audio).mean(dim=2)  # (batch, 1)
-            g_loss = adversarial_loss(pred_fake, valid)
+            g_loss = adversarial_loss(pred_fake, real_labels)  # Generator wants to fool D into thinking fake is real
             
             g_loss.backward()
             optimizer_G.step()
@@ -81,8 +81,8 @@ def train():
             
             pred_real = discriminator(real_audio).mean(dim=2)  # (batch, 1)
             pred_fake = discriminator(gen_audio.detach()).mean(dim=2)  # (batch, 1)
-            real_loss = adversarial_loss(pred_real, valid)
-            fake_loss = adversarial_loss(pred_fake, fake)
+            real_loss = adversarial_loss(pred_real, real_labels)  # D should predict 0.9 for real samples
+            fake_loss = adversarial_loss(pred_fake, fake_labels)  # D should predict 0 for fake samples
             d_loss = (real_loss + fake_loss) / 2
             
             d_loss.backward()

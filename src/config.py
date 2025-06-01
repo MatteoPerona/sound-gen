@@ -17,7 +17,8 @@ F_MAX = 8000
 # Training parameters
 BATCH_SIZE = 8
 NUM_EPOCHS = 100
-LEARNING_RATE = 0.0002
+G_LEARNING_RATE = 1e-4
+D_LEARNING_RATE = 5e-5
 BETA1 = 0.5
 BETA2 = 0.999
 
@@ -39,7 +40,8 @@ def init_wandb():
             "win_length": WIN_LENGTH,
             "batch_size": BATCH_SIZE,
             "num_epochs": NUM_EPOCHS,
-            "learning_rate": LEARNING_RATE,
+            "g_learning_rate": G_LEARNING_RATE,
+            "d_learning_rate": D_LEARNING_RATE,
             "beta1": BETA1,
             "beta2": BETA2,
             "latent_dim": LATENT_DIM,
