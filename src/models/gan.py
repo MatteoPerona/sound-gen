@@ -40,13 +40,13 @@ class Generator(nn.Module):
         n_mels = x.shape[2]
         target_steps = AUDIO_LENGTH // 16
 
-        print("x.shape after encoder:", x.shape)
-        print("n_mels:", n_mels, "target_steps:", target_steps)
+        # print("x.shape after encoder:", x.shape)
+        # print("n_mels:", n_mels, "target_steps:", target_steps)
 
         x = F.adaptive_avg_pool2d(x, (n_mels, target_steps))
-        print("x.shape after pooling:", x.shape)
+        # print("x.shape after pooling:", x.shape)
         x = x.mean(dim=2)  # (batch, 128, target_steps)
-        print("x.shape after mean:", x.shape)
+        # print("x.shape after mean:", x.shape)
 
         audio = self.upsampling_blocks(x)
         if audio.shape[-1] != AUDIO_LENGTH:

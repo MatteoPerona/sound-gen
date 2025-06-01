@@ -6,7 +6,7 @@ WANDB_ENTITY = None  # Set this to your wandb username
 
 # Data parameters
 SAMPLE_RATE = 22050
-AUDIO_LENGTH = 22050 * 30  # 30 seconds of audio
+AUDIO_LENGTH = 22050 * 5  # 30 seconds of audio
 N_MELS = 80
 # HOP_LENGTH = 256
 HOP_LENGTH = 512
