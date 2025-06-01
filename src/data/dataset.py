@@ -6,7 +6,7 @@ import torchaudio
 from config import AUDIO_LENGTH, SAMPLE_RATE
 
 class MelSpectrogramDataset(Dataset):
-    def __init__(self, mels_dir="data/mels", audio_dir="data/audio"):
+    def __init__(self, mels_dir="data/clean/mels", audio_dir="data/clean/audio"):
         self.mels_dir = Path(mels_dir)
         self.audio_dir = Path(audio_dir)
         

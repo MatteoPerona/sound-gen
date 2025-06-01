@@ -12,13 +12,16 @@ from config import *
 
 def train():
     # Initialize wandb
+    print("initializing wandb...")
     wandb.init(project=WANDB_PROJECT, entity=WANDB_ENTITY)
     
     # Set device
+    print("setting device...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Initialize dataset and dataloader
-    dataset = MelSpectrogramDataset(mels_dir="data/mels", audio_dir="data/audio")
+    print("initializing dataset and dataloader...")
+    dataset = MelSpectrogramDataset(mels_dir="data/clean/mels", audio_dir="data/clean/audio")
     dataloader = DataLoader(
         dataset,
         batch_size=BATCH_SIZE,
@@ -28,6 +31,7 @@ def train():
     )
     
     # Initialize models
+    print("initializing models...")
     generator = Generator(n_mels=N_MELS, audio_length=AUDIO_LENGTH).to(device)
     discriminator = Discriminator(audio_length=AUDIO_LENGTH).to(device)
     
@@ -39,6 +43,7 @@ def train():
     optimizer_D = optim.Adam(discriminator.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))
     
     # Training loop
+    print("starting training loop...")
     for epoch in range(NUM_EPOCHS):
         for i, (mel_specs, real_audio) in enumerate(dataloader):
             batch_size = mel_specs.shape[0]
