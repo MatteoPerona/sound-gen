@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import wandb
 from pathlib import Path
+from tqdm import tqdm
 
 from models.gan import Generator, Discriminator
 from utils import log_audio_samples, save_checkpoint
@@ -17,7 +18,11 @@ def train():
     
     # Set device
     print("setting device...")
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    print(torch.cuda.get_device_name(0))
+
     
     # Initialize dataset and dataloader
     print("initializing dataset and dataloader...")
@@ -45,7 +50,8 @@ def train():
     # Training loop
     print("starting training loop...")
     for epoch in range(NUM_EPOCHS):
-        for i, (mel_specs, real_audio) in enumerate(dataloader):
+        # Wrap dataloader with tqdm for progress bar
+        for i, (mel_specs, real_audio) in enumerate(tqdm(dataloader, desc=f"Epoch {epoch+1}/{NUM_EPOCHS}")):
             batch_size = mel_specs.shape[0]
             mel_specs = mel_specs.to(device)
             real_audio = real_audio.to(device)
@@ -63,7 +69,8 @@ def train():
             gen_audio = generator(mel_specs)
             
             # Loss measures generator's ability to fool the discriminator
-            g_loss = adversarial_loss(discriminator(gen_audio), valid)
+            pred_fake = discriminator(gen_audio).mean(dim=2)  # (batch, 1)
+            g_loss = adversarial_loss(pred_fake, valid)
             
             g_loss.backward()
             optimizer_G.step()
@@ -73,9 +80,10 @@ def train():
             # ---------------------
             optimizer_D.zero_grad()
             
-            # Measure discriminator's ability to classify real from generated samples
-            real_loss = adversarial_loss(discriminator(real_audio), valid)
-            fake_loss = adversarial_loss(discriminator(gen_audio.detach()), fake)
+            pred_real = discriminator(real_audio).mean(dim=2)  # (batch, 1)
+            pred_fake = discriminator(gen_audio.detach()).mean(dim=2)  # (batch, 1)
+            real_loss = adversarial_loss(pred_real, valid)
+            fake_loss = adversarial_loss(pred_fake, fake)
             d_loss = (real_loss + fake_loss) / 2
             
             d_loss.backward()
@@ -121,4 +129,4 @@ if __name__ == "__main__":
     Path("checkpoints").mkdir(exist_ok=True)
     
     # Start training
-    train() 
+    train()

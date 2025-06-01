@@ -30,24 +30,29 @@ def save_audio(audio, file_path, sample_rate=22050):
     """Save audio tensor to file."""
     torchaudio.save(file_path, audio.unsqueeze(0), sample_rate)
 
-def log_audio_samples(gen_audio, mel_spec, step, sample_rate=22050):
-    """Log audio samples and spectrograms to wandb."""
-    # Convert tensors to numpy arrays
+def log_audio_samples(gen_audio, real_audio, step, mel_spec=None, sample_rate=22050):
+    import wandb
+    import numpy as np
+
+    # Convert tensors to numpy
     gen_audio_np = gen_audio.detach().cpu().numpy()
-    mel_spec_np = mel_spec.detach().cpu().numpy()
-    
+    real_audio_np = real_audio.detach().cpu().numpy()
+
     # Log audio
     wandb.log({
-        "generated_audio": wandb.Audio(
-            gen_audio_np,
-            sample_rate=sample_rate,
-            caption=f"Generated Audio (Step {step})"
-        ),
-        "mel_spectrogram": wandb.Image(
-            mel_spec_np,
-            caption=f"Mel Spectrogram (Step {step})"
-        )
+        "generated_audio": wandb.Audio(gen_audio_np, sample_rate=sample_rate, caption=f"Generated Audio (Step {step})"),
+        "real_audio": wandb.Audio(real_audio_np, sample_rate=sample_rate, caption=f"Real Audio (Step {step})"),
     })
+
+    # Log mel spectrogram as image if provided
+    if mel_spec is not None:
+        mel_spec_np = mel_spec.detach().cpu().numpy()
+        # If shape is (1, n_mels, time), squeeze the channel
+        if mel_spec_np.ndim == 3 and mel_spec_np.shape[0] == 1:
+            mel_spec_np = mel_spec_np[0]
+        wandb.log({
+            "mel_spectrogram": wandb.Image(mel_spec_np, caption=f"Mel Spectrogram (Step {step})")
+        })
 
 def save_checkpoint(model, optimizer, epoch, loss, path):
     """Save model checkpoint."""
@@ -64,4 +69,4 @@ def load_checkpoint(model, optimizer, path):
     checkpoint = torch.load(path)
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    return checkpoint['epoch'], checkpoint['loss'] 
+    return checkpoint['epoch'], checkpoint['loss']

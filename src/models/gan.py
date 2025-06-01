@@ -7,7 +7,6 @@ class Generator(nn.Module):
     def __init__(self, n_mels=N_MELS, audio_length=AUDIO_LENGTH):
         super(Generator, self).__init__()
         
-        # Initial processing of mel spectrogram
         self.mel_encoder = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
@@ -18,52 +17,37 @@ class Generator(nn.Module):
             nn.BatchNorm2d(128),
             nn.LeakyReLU(0.2, inplace=True)
         )
-        
-        # Upsampling blocks to generate audio
+
         self.upsampling_blocks = nn.Sequential(
-            # First upsampling block
             nn.ConvTranspose1d(128, 128, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm1d(128),
             nn.LeakyReLU(0.2, inplace=True),
-            
-            # Second upsampling block
             nn.ConvTranspose1d(128, 64, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm1d(64),
             nn.LeakyReLU(0.2, inplace=True),
-            
-            # Third upsampling block
             nn.ConvTranspose1d(64, 32, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm1d(32),
             nn.LeakyReLU(0.2, inplace=True),
-            
-            # Fourth upsampling block
             nn.ConvTranspose1d(32, 16, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm1d(16),
             nn.LeakyReLU(0.2, inplace=True),
-            
-            # Final layer to get audio waveform
             nn.Conv1d(16, 1, kernel_size=7, stride=1, padding=3),
             nn.Tanh()
         )
-        
-        # Project mel spectrogram to initial audio length
-        self.mel_projection = nn.Linear(n_mels, audio_length // 16)
-    
+
     def forward(self, mel_spec):
-        # Input shape: (batch_size, 1, n_mels, time_steps)
-        batch_size = mel_spec.shape[0]
-        
-        # Encode mel spectrogram
         x = self.mel_encoder(mel_spec)  # (batch_size, 128, n_mels, time_steps)
-        
-        # Project to initial audio length
-        x = x.permute(0, 1, 3, 2)  # (batch_size, 128, time_steps, n_mels)
-        x = x.reshape(batch_size, 128, -1)  # (batch_size, 128, time_steps * n_mels)
-        x = self.mel_projection(x)  # (batch_size, 128, audio_length // 16)
-        
-        # Generate audio through upsampling blocks
+        n_mels = x.shape[2]
+        # Fix: Don't pool to a size larger than input
+        target_steps = min(1024, x.shape[3])  # or just x.shape[3] if you want no change
+
+        # print("x.shape before pooling:", x.shape)
+        # print("n_mels:", n_mels, "target_steps:", target_steps)
+
+        x = F.adaptive_avg_pool2d(x, (n_mels, target_steps))
+        x = x.mean(dim=2)  # (batch, 128, target_steps)
+
         audio = self.upsampling_blocks(x)  # (batch_size, 1, audio_length)
-        
         return audio.squeeze(1)  # (batch_size, audio_length)
 
 class Discriminator(nn.Module):
@@ -90,4 +74,4 @@ class Discriminator(nn.Module):
     def forward(self, audio):
         # Input shape: (batch_size, audio_length)
         audio = audio.unsqueeze(1)  # Add channel dimension
-        return self.model(audio) 
+        return self.model(audio)
