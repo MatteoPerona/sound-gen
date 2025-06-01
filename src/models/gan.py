@@ -38,17 +38,20 @@ class Generator(nn.Module):
     def forward(self, mel_spec):
         x = self.mel_encoder(mel_spec)  # (batch_size, 128, n_mels, time_steps)
         n_mels = x.shape[2]
-        # Fix: Don't pool to a size larger than input
-        target_steps = min(1024, x.shape[3])  # or just x.shape[3] if you want no change
+        target_steps = AUDIO_LENGTH // 16
 
-        # print("x.shape before pooling:", x.shape)
-        # print("n_mels:", n_mels, "target_steps:", target_steps)
+        print("x.shape after encoder:", x.shape)
+        print("n_mels:", n_mels, "target_steps:", target_steps)
 
         x = F.adaptive_avg_pool2d(x, (n_mels, target_steps))
+        print("x.shape after pooling:", x.shape)
         x = x.mean(dim=2)  # (batch, 128, target_steps)
+        print("x.shape after mean:", x.shape)
 
-        audio = self.upsampling_blocks(x)  # (batch_size, 1, audio_length)
-        return audio.squeeze(1)  # (batch_size, audio_length)
+        audio = self.upsampling_blocks(x)
+        if audio.shape[-1] != AUDIO_LENGTH:
+            audio = F.interpolate(audio, size=AUDIO_LENGTH, mode='linear', align_corners=False)
+        return audio.squeeze(1)  # (batch_size, AUDIO_LENGTH)
 
 class Discriminator(nn.Module):
     def __init__(self, audio_length=AUDIO_LENGTH):
