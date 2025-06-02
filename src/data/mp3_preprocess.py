@@ -1,23 +1,32 @@
 import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import *
 import librosa
 import soundfile as sf
 from tqdm import tqdm
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-base_dir = "moodtheme-mp3"
-output_dir = "moodtheme-wav-30s"
+
+# IMPORTANT: RUN FROM /SRC NOT SRC/DATA
+
+
+base_dir = "raw\\audio"
+output_dir = "clean\\audio"
 os.makedirs(output_dir, exist_ok=True)
 
-target_sr = 22050  # or any sample rate you want
-target_duration = 30  # seconds
-target_length = target_sr * target_duration
+target_sr = SAMPLE_RATE  # or any sample rate you want
+target_duration = AUDIO_IN_SECONDS  # seconds
+target_length = AUDIO_LENGTH
+# target_length = target_sr * target_duration 
 
 # Gather all mp3 file paths
 mp3_files = []
 for nn in range(100):
     subdir = os.path.join(base_dir, f"{nn:02d}")
     if not os.path.isdir(subdir):
+        print(f"Skipping non-directory: {subdir}")
         continue
     for fname in os.listdir(subdir):
         if fname.lower().endswith(".mp3"):
@@ -47,7 +56,7 @@ if __name__ == "__main__":
 
     with ProcessPoolExecutor() as executor:
         futures = [executor.submit(process_and_save, fpath) for fpath in mp3_files]
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Converting to 30s WAVs"):
+        for future in tqdm(as_completed(futures), total=len(futures), desc=f'Converting to {AUDIO_IN_SECONDS}s WAVs'):
             result = future.result()
             if result:
                 success_count += 1

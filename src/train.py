@@ -21,7 +21,9 @@ def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     if torch.cuda.is_available():
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"============== GPU: {torch.cuda.get_device_name(0)}")
+    else:
+        print("============== No GPU available, using CPU.")
     
     # Initialize dataset and dataloader
     print("initializing dataset and dataloader...")
