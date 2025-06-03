@@ -12,8 +12,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # IMPORTANT: RUN FROM /SRC NOT SRC/DATA
 
 
-base_dir = "raw\\audio"
-output_dir = "clean\\audio"
+base_dir = "raw/audio"
+output_dir = "clean/audio"
 os.makedirs(output_dir, exist_ok=True)
 
 target_sr = SAMPLE_RATE  # or any sample rate you want
@@ -64,3 +64,7 @@ if __name__ == "__main__":
                 fail_count += 1
 
     print(f"Done! {success_count} files processed successfully, {fail_count} failed.")
+
+    # print("Converting Wavs to Melspectrograms...")
+    # from src.data.clean_wav_to_mel import convert_wavs_to_mels
+    # convert_wavs_to_mels()

@@ -3,12 +3,13 @@ import numpy as np
 from models.gan import Generator
 from config import N_MELS, AUDIO_LENGTH
 import soundfile as sf
+from config import *
 
 # ---- CONFIG ----
 CHECKPOINT_PATH = "checkpoints/generator_epoch_0.pt"  # Update this
 MEL_SPEC_PATH = "data/clean/mels/00/7400.npy"      # Update this
 OUTPUT_WAV_PATH = "data/generated_audio.wav"
-SAMPLE_RATE = 22050  # Update if needed
+SAMPLE_RATE = SAMPLE_RATE  # Update if needed
 
 # ---- LOAD GENERATOR ----
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

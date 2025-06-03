@@ -4,8 +4,9 @@ import librosa
 import numpy as np
 import wandb
 from pathlib import Path
+from config import *
 
-def load_audio(file_path, sample_rate=22050):
+def load_audio(file_path, sample_rate=SAMPLE_RATE):
     """Load audio file and convert to mono."""
     audio, sr = torchaudio.load(file_path)
     if audio.shape[0] > 1:
@@ -26,11 +27,11 @@ def load_audio(file_path, sample_rate=22050):
 #     mel_spec = mel_transform(audio)
 #     return mel_spec
 
-def save_audio(audio, file_path, sample_rate=22050):
+def save_audio(audio, file_path, sample_rate=SAMPLE_RATE):
     """Save audio tensor to file."""
     torchaudio.save(file_path, audio.unsqueeze(0), sample_rate)
 
-def log_audio_samples(gen_audio, real_audio, step, mel_spec=None, sample_rate=22050):
+def log_audio_samples(gen_audio, real_audio, step, mel_spec=None, sample_rate=SAMPLE_RATE):
     import wandb
     import numpy as np
 
