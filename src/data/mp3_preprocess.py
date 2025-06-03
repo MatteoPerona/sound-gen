@@ -9,9 +9,6 @@ import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
-# IMPORTANT: RUN FROM /SRC NOT SRC/DATA
-
-
 base_dir = "raw/audio"
 output_dir = "clean/audio"
 os.makedirs(output_dir, exist_ok=True)

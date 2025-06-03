@@ -16,7 +16,13 @@ def process_wav(in_path):
     try:
         y, sr = librosa.load(in_path, sr=SAMPLE_RATE)
         mel = librosa.feature.melspectrogram(
-            y=y, sr=sr, n_mels=N_MELS, hop_length=HOP_LENGTH
+            y=y,
+            sr=sr,
+            n_fft=WIN_LENGTH,         # Use your config's FFT/window size
+            hop_length=HOP_LENGTH,
+            n_mels=N_MELS,
+            fmin=F_MIN,               # Set min frequency (e.g., 0 or 20)
+            fmax=F_MAX                # Set max frequency (e.g., sr//2 or 8000/11025)
         )
         mel_db = librosa.power_to_db(mel, ref=np.max)
         # Save to output directory, preserving subfolder structure

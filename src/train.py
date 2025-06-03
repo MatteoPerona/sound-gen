@@ -30,7 +30,7 @@ def train():
     
     # Initialize dataset and dataloader
     print("initializing dataset and dataloader...")
-    dataset = MelSpectrogramDataset(mels_dir="src/data/clean/mels", audio_dir="src/data/clean/audio")
+    dataset = MelSpectrogramDataset(mels_dir="data/clean/mels", audio_dir="data/clean/audio")
     dataloader = DataLoader(
         dataset,
         batch_size=BATCH_SIZE,

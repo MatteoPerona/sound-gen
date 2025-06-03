@@ -3,21 +3,54 @@ import torch.nn as nn
 import torch.nn.functional as F
 from config import AUDIO_LENGTH, N_MELS, SAMPLE_RATE, HOP_LENGTH, WIN_LENGTH, F_MIN, F_MAX
 
+# How to mitigate this?
+# Residual/Skip Connections:
+# Use skip connections from early layers (or even from the input mel) to later layers or the output. This helps preserve original frequency information.
+# DONE!
+
+# Careful Kernel/Stride Choices:
+# Use kernel sizes and strides that preserve resolution and context.
+
+# Multi-Receptive Field Blocks:
+# Use parallel convolutions with different dilations (as in HiFi-GAN) to capture both local and global context.
+
+# Feature-wise Conditioning:
+# Consider re-injecting the mel spectrogram (or features from it) at multiple points in the generator.
+
+# Monitor Feature Maps:
+# Visualize intermediate feature maps to ensure frequency information is preserved.
+
+class Snake(nn.Module):
+    def __init__(self, alpha=1.0):
+        super().__init__()
+        self.alpha = nn.Parameter(torch.tensor(alpha))
+
+    def forward(self, x):
+        return x + (1.0 / self.alpha) * torch.sin(self.alpha * x) ** 2
+
+
 class ResBlock(nn.Module):
     def __init__(self, channels, kernel_size, dilations):
         super().__init__()
         self.convs = nn.ModuleList([
             nn.Sequential(
-                nn.LeakyReLU(0.2),
+                Snake(),
                 nn.Conv1d(channels, channels, kernel_size, padding=d, dilation=d),
-                nn.LeakyReLU(0.2),
+                Snake(),
                 nn.Conv1d(channels, channels, kernel_size, padding=1, dilation=3)
             )
             for d in dilations
         ])
     
     def forward(self, x):
-        return sum([conv(x) for conv in self.convs]) / len(self.convs)
+        out = sum([conv(x) for conv in self.convs]) / len(self.convs)
+        # Ensure out and x have the same time dimension
+        # i THINK this shouldnt matter, since we mainly just want to preserve x
+        if out.shape[-1] != x.shape[-1]:
+            min_len = min(out.shape[-1], x.shape[-1])
+            out = out[..., :min_len]
+            x = x[..., :min_len]
+        return out + x
 
 class Generator(nn.Module):
     def __init__(self, n_mels=N_MELS, audio_length=AUDIO_LENGTH):
@@ -42,11 +75,12 @@ class Generator(nn.Module):
         self.rb4 = ResBlock(16, kernel_size=3, dilations=[1, 3, 5])
         self.bn4 = nn.BatchNorm1d(16)
         
-        self.final_conv = nn.Conv1d(16, 1, kernel_size=7, stride=1, padding=3)
+        self.final_conv = nn.Conv1d(16 + n_mels, 1, kernel_size=7, stride=1, padding=3)
         self.final_act = nn.Tanh()
 
     def forward(self, mel_spec):
         x = mel_spec.squeeze(1)  # (B, n_mels, T)
+        mel_skip = x
         x = self.initial_conv(x)  # (B, 128, T)
         
         x = self.up1(x)
@@ -64,6 +98,12 @@ class Generator(nn.Module):
         x = self.up4(x)
         x = self.bn4(x)
         x = self.rb4(x)
+
+        # Upsample mel_skip to match x's time dimension if needed
+        if mel_skip.shape[-1] != x.shape[-1]:
+            mel_skip = F.interpolate(mel_skip, size=x.shape[-1], mode='linear', align_corners=False)
+        # Concatenate skip connection
+        x = torch.cat([x, mel_skip], dim=1)
         
         x = self.final_conv(x)
         x = self.final_act(x)
@@ -165,9 +205,9 @@ class VocoderLoss(nn.Module):
         # Combine losses with weights
         total_loss = (
             loss_fm * 10.0 +  # λ_fm
-            loss_stft * 1.0 +  # λ_stft
-            loss_mel * 45.0 +  # λ_mel
-            loss_wav * 1.0     # λ_wav
+            loss_stft * 20.0 +  # λ_stft
+            loss_mel * 75.0 +  # λ_mel
+            loss_wav * 2.0     # λ_wav
         )
         
         return {
@@ -177,3 +217,4 @@ class VocoderLoss(nn.Module):
             'fm': loss_fm,
             'wav': loss_wav
         }
+
