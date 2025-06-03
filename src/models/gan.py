@@ -1,57 +1,76 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from config import AUDIO_LENGTH, N_MELS
+from config import AUDIO_LENGTH, N_MELS, SAMPLE_RATE, HOP_LENGTH, WIN_LENGTH, F_MIN, F_MAX
+
+class ResBlock(nn.Module):
+    def __init__(self, channels, kernel_size, dilations):
+        super().__init__()
+        self.convs = nn.ModuleList([
+            nn.Sequential(
+                nn.LeakyReLU(0.2),
+                nn.Conv1d(channels, channels, kernel_size, padding=d, dilation=d),
+                nn.LeakyReLU(0.2),
+                nn.Conv1d(channels, channels, kernel_size, padding=1, dilation=1)
+            )
+            for d in dilations
+        ])
+    
+    def forward(self, x):
+        return sum([conv(x) for conv in self.convs]) / len(self.convs)
 
 class Generator(nn.Module):
     def __init__(self, n_mels=N_MELS, audio_length=AUDIO_LENGTH):
         super(Generator, self).__init__()
         
-        self.mel_encoder = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2, inplace=True)
-        )
-
-        self.upsampling_blocks = nn.Sequential(
-            nn.ConvTranspose1d(128, 128, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm1d(128),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.ConvTranspose1d(128, 64, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.ConvTranspose1d(64, 32, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm1d(32),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.ConvTranspose1d(32, 16, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm1d(16),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv1d(16, 1, kernel_size=7, stride=1, padding=3),
-            nn.Tanh()
-        )
+        self.initial_conv = nn.Conv1d(n_mels, 128, kernel_size=7, padding=3)
+        
+        # Upsampling layers and corresponding ResBlocks
+        self.up1 = nn.ConvTranspose1d(128, 128, kernel_size=4, stride=2, padding=1)
+        self.rb1 = ResBlock(128, kernel_size=3, dilations=[1, 3, 5])
+        self.bn1 = nn.BatchNorm1d(128)
+        
+        self.up2 = nn.ConvTranspose1d(128, 64, kernel_size=4, stride=2, padding=1)
+        self.rb2 = ResBlock(64, kernel_size=3, dilations=[1, 3, 5])
+        self.bn2 = nn.BatchNorm1d(64)
+        
+        self.up3 = nn.ConvTranspose1d(64, 32, kernel_size=4, stride=2, padding=1)
+        self.rb3 = ResBlock(32, kernel_size=3, dilations=[1, 3, 5])
+        self.bn3 = nn.BatchNorm1d(32)
+        
+        self.up4 = nn.ConvTranspose1d(32, 16, kernel_size=4, stride=2, padding=1)
+        self.rb4 = ResBlock(16, kernel_size=3, dilations=[1, 3, 5])
+        self.bn4 = nn.BatchNorm1d(16)
+        
+        self.final_conv = nn.Conv1d(16, 1, kernel_size=7, stride=1, padding=3)
+        self.final_act = nn.Tanh()
 
     def forward(self, mel_spec):
-        x = self.mel_encoder(mel_spec)  # (batch_size, 128, n_mels, time_steps)
-        n_mels = x.shape[2]
-        target_steps = AUDIO_LENGTH // 16
-
-        # print("x.shape after encoder:", x.shape)
-        # print("n_mels:", n_mels, "target_steps:", target_steps)
-
-        x = F.adaptive_avg_pool2d(x, (n_mels, target_steps))
-        # print("x.shape after pooling:", x.shape)
-        x = x.mean(dim=2)  # (batch, 128, target_steps)
-        # print("x.shape after mean:", x.shape)
-
-        audio = self.upsampling_blocks(x)
-        if audio.shape[-1] != AUDIO_LENGTH:
-            audio = F.interpolate(audio, size=AUDIO_LENGTH, mode='linear', align_corners=False)
-        return audio.squeeze(1)  # (batch_size, AUDIO_LENGTH)
+        x = mel_spec.squeeze(1)  # (B, n_mels, T)
+        x = self.initial_conv(x)  # (B, 128, T)
+        
+        x = self.up1(x)
+        x = self.bn1(x)
+        x = self.rb1(x)
+        
+        x = self.up2(x)
+        x = self.bn2(x)
+        x = self.rb2(x)
+        
+        x = self.up3(x)
+        x = self.bn3(x)
+        x = self.rb3(x)
+        
+        x = self.up4(x)
+        x = self.bn4(x)
+        x = self.rb4(x)
+        
+        x = self.final_conv(x)
+        x = self.final_act(x)
+        
+        if x.shape[-1] != AUDIO_LENGTH:
+            x = F.interpolate(x, size=AUDIO_LENGTH, mode='linear', align_corners=False)
+        return x.squeeze(1)
 
 class Discriminator(nn.Module):
     def __init__(self, audio_length=AUDIO_LENGTH):
@@ -64,17 +83,91 @@ class Discriminator(nn.Module):
             layers.append(nn.LeakyReLU(0.2, inplace=True))
             return layers
 
-        self.model = nn.Sequential(
-            *discriminator_block(1, 16, normalization=False),
-            *discriminator_block(16, 32),
-            *discriminator_block(32, 64),
-            *discriminator_block(64, 128),
-            *discriminator_block(128, 256),
-            *discriminator_block(256, 512),
-            nn.Conv1d(512, 1, 4, stride=1, padding=0)
-        )
+        self.blocks = nn.ModuleList([
+            nn.Sequential(*discriminator_block(1, 16, normalization=False)),
+            nn.Sequential(*discriminator_block(16, 32)),
+            nn.Sequential(*discriminator_block(32, 64)),
+            nn.Sequential(*discriminator_block(64, 128)),
+            nn.Sequential(*discriminator_block(128, 256)),
+            nn.Sequential(*discriminator_block(256, 512)),
+        ])
+        
+        self.final_conv = nn.Conv1d(512, 1, 4, stride=1, padding=0)
     
-    def forward(self, audio):
+    def forward(self, audio, return_features=False):
         # Input shape: (batch_size, audio_length)
         audio = audio.unsqueeze(1)  # Add channel dimension
-        return self.model(audio)
+        
+        features = []
+        x = audio
+        
+        # Pass through each block and collect features
+        for block in self.blocks:
+            x = block(x)
+            features.append(x)
+        
+        # Final convolution
+        x = self.final_conv(x)
+        
+        if return_features:
+            return x, features
+            # return self.model(audio), features
+        return x
+        # return self.model(audio)
+
+class VocoderLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.stft_sizes = [(1024, 256, 1024), (2048, 512, 2048), (512, 128, 512)]
+        
+    def stft_loss(self, x_real, x_fake):
+        loss = 0
+        for fft_size, hop_size, win_size in self.stft_sizes:
+            real_mag = torch.abs(torch.stft(x_real, fft_size, hop_length=hop_size, 
+                                          win_length=win_size, return_complex=True))
+            fake_mag = torch.abs(torch.stft(x_fake, fft_size, hop_length=hop_size, 
+                                          win_length=win_size, return_complex=True))
+            loss += F.l1_loss(real_mag, fake_mag)
+        return loss
+    
+    def mel_loss(self, x_real, x_fake):
+        # Compute mel spectrograms using the same parameters as in preprocessing
+        mel_real = torch.stft(x_real, WIN_LENGTH, hop_length=HOP_LENGTH, 
+                            win_length=WIN_LENGTH, return_complex=True)
+        mel_fake = torch.stft(x_fake, WIN_LENGTH, hop_length=HOP_LENGTH, 
+                            win_length=WIN_LENGTH, return_complex=True)
+        
+        # Convert to mel scale (simplified version - you might want to use librosa's mel_filters)
+        mel_real = torch.abs(mel_real)
+        mel_fake = torch.abs(mel_fake)
+        
+        return F.l1_loss(mel_real, mel_fake)
+    
+    def feature_matching_loss(self, real_features, fake_features):
+        loss = 0
+        for f_real, f_fake in zip(real_features, fake_features):
+            loss += F.l1_loss(f_real, f_fake)
+        return loss
+    
+    def forward(self, x_real, x_fake, real_features, fake_features):
+        # Calculate all losses
+        loss_stft = self.stft_loss(x_real, x_fake)
+        loss_mel = self.mel_loss(x_real, x_fake)
+        loss_fm = self.feature_matching_loss(real_features, fake_features)
+        loss_wav = F.l1_loss(x_fake, x_real)  # Optional waveform loss
+        
+        # Combine losses with weights
+        total_loss = (
+            loss_fm * 10.0 +  # λ_fm
+            loss_stft * 1.0 +  # λ_stft
+            loss_mel * 45.0 +  # λ_mel
+            loss_wav * 1.0     # λ_wav
+        )
+        
+        return {
+            'total': total_loss,
+            'stft': loss_stft,
+            'mel': loss_mel,
+            'fm': loss_fm,
+            'wav': loss_wav
+        }

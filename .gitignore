@@ -52,3 +52,8 @@ src/data/raw/*
 src/data/5s_duration/*
 src/data/30s_duration/*
 src/wandb/*
+wandb
+checkpoints
+
+
+
