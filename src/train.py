@@ -11,6 +11,8 @@ from utils import log_audio_samples, save_checkpoint
 from data.dataset import MelSpectrogramDataset
 from config import *
 
+import random
+
 def train():
     # Initialize wandb
     print("initializing wandb...")
@@ -83,6 +85,10 @@ def train():
             
             pred_real = discriminator(real_audio).mean(dim=2)  # (batch, 1)
             pred_fake = discriminator(gen_audio.detach()).mean(dim=2)  # (batch, 1)
+            
+            if random.random() < 0.1:
+                real_labels, fake_labels = fake_labels, real_labels
+            
             real_loss = adversarial_loss(pred_real, real_labels)  # D should predict 0.9 for real samples
             fake_loss = adversarial_loss(pred_fake, fake_labels)  # D should predict 0 for fake samples
             d_loss = (real_loss + fake_loss) / 2
