@@ -11,7 +11,7 @@ class ResBlock(nn.Module):
                 nn.LeakyReLU(0.2),
                 nn.Conv1d(channels, channels, kernel_size, padding=d, dilation=d),
                 nn.LeakyReLU(0.2),
-                nn.Conv1d(channels, channels, kernel_size, padding=1, dilation=1)
+                nn.Conv1d(channels, channels, kernel_size, padding=1, dilation=3)
             )
             for d in dilations
         ])
@@ -123,24 +123,30 @@ class VocoderLoss(nn.Module):
     def stft_loss(self, x_real, x_fake):
         loss = 0
         for fft_size, hop_size, win_size in self.stft_sizes:
-            real_mag = torch.abs(torch.stft(x_real, fft_size, hop_length=hop_size, 
-                                          win_length=win_size, return_complex=True))
-            fake_mag = torch.abs(torch.stft(x_fake, fft_size, hop_length=hop_size, 
-                                          win_length=win_size, return_complex=True))
+            window = torch.hann_window(win_size, device=x_real.device)
+            real_mag = torch.abs(torch.stft(
+                x_real, fft_size, hop_length=hop_size, 
+                win_length=win_size, window=window, return_complex=True
+            ))
+            fake_mag = torch.abs(torch.stft(
+                x_fake, fft_size, hop_length=hop_size, 
+                win_length=win_size, window=window, return_complex=True
+            ))
             loss += F.l1_loss(real_mag, fake_mag)
         return loss
-    
+
     def mel_loss(self, x_real, x_fake):
-        # Compute mel spectrograms using the same parameters as in preprocessing
-        mel_real = torch.stft(x_real, WIN_LENGTH, hop_length=HOP_LENGTH, 
-                            win_length=WIN_LENGTH, return_complex=True)
-        mel_fake = torch.stft(x_fake, WIN_LENGTH, hop_length=HOP_LENGTH, 
-                            win_length=WIN_LENGTH, return_complex=True)
-        
-        # Convert to mel scale (simplified version - you might want to use librosa's mel_filters)
+        window = torch.hann_window(WIN_LENGTH, device=x_real.device)
+        mel_real = torch.stft(
+            x_real, WIN_LENGTH, hop_length=HOP_LENGTH, 
+            win_length=WIN_LENGTH, window=window, return_complex=True
+        )
+        mel_fake = torch.stft(
+            x_fake, WIN_LENGTH, hop_length=HOP_LENGTH, 
+            win_length=WIN_LENGTH, window=window, return_complex=True
+        )
         mel_real = torch.abs(mel_real)
         mel_fake = torch.abs(mel_fake)
-        
         return F.l1_loss(mel_real, mel_fake)
     
     def feature_matching_loss(self, real_features, fake_features):
