@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torchaudio
 import torch.nn.functional as F
 from config import AUDIO_LENGTH, N_MELS, SAMPLE_RATE, HOP_LENGTH, WIN_LENGTH, F_MIN, F_MAX
 
@@ -80,40 +81,50 @@ class ResBlock(nn.Module):
 class Generator(nn.Module):
     def __init__(self, n_mels=N_MELS, audio_length=AUDIO_LENGTH):
         super(Generator, self).__init__()
-        
-        self.initial_conv = nn.Conv1d(n_mels, 128, kernel_size=7, padding=3)
 
-        # Mel projections for re-injection
-        self.mel_proj1 = nn.Conv1d(n_mels, 128, kernel_size=1)
-        self.mel_proj2 = nn.Conv1d(n_mels, 64, kernel_size=1)
-        self.mel_proj3 = nn.Conv1d(n_mels, 32, kernel_size=1)
-        self.mel_proj4 = nn.Conv1d(n_mels, 16, kernel_size=1)
-        
+        self.initial_conv = nn.Conv1d(n_mels, 2048, kernel_size=7, padding=3)
+
+        # Mel projections for re-injection at each stage
+        self.mel_proj1 = nn.Conv1d(n_mels, 1024, kernel_size=1)   # after up1: 1024 channels
+        self.mel_proj2 = nn.Conv1d(n_mels, 512, kernel_size=1)    # after up2: 512 channels
+        self.mel_proj3 = nn.Conv1d(n_mels, 256, kernel_size=1)    # after up3: 256 channels
+        self.mel_proj4 = nn.Conv1d(n_mels, 128, kernel_size=1)    # after up4: 128 channels
+        self.mel_proj5 = nn.Conv1d(n_mels, 64, kernel_size=1)     # after up5: 64 channels
+        self.mel_proj6 = nn.Conv1d(n_mels, 32, kernel_size=1)     # after up6: 32 channels
+
         # Upsampling layers and corresponding MRFBlocks
-        self.up1 = nn.ConvTranspose1d(128, 128, kernel_size=4, stride=2, padding=1)
-        self.mrf1 = MRFBlock(128)
-        self.bn1 = nn.BatchNorm1d(128)
-        
-        self.up2 = nn.ConvTranspose1d(128, 64, kernel_size=4, stride=2, padding=1)
-        self.mrf2 = MRFBlock(64)
-        self.bn2 = nn.BatchNorm1d(64)
-        
-        self.up3 = nn.ConvTranspose1d(64, 32, kernel_size=4, stride=2, padding=1)
-        self.mrf3 = MRFBlock(32)
-        self.bn3 = nn.BatchNorm1d(32)
-        
-        self.up4 = nn.ConvTranspose1d(32, 16, kernel_size=4, stride=2, padding=1)
-        self.mrf4 = MRFBlock(16)
-        self.bn4 = nn.BatchNorm1d(16)
-        
-        self.final_conv = nn.Conv1d(16 + n_mels, 1, kernel_size=7, stride=1, padding=3)
+        self.up1 = nn.ConvTranspose1d(2048, 1024, kernel_size=4, stride=2, padding=1)
+        self.mrf1 = MRFBlock(1024)
+        self.bn1 = nn.BatchNorm1d(1024)
+
+        self.up2 = nn.ConvTranspose1d(1024, 512, kernel_size=4, stride=2, padding=1)
+        self.mrf2 = MRFBlock(512)
+        self.bn2 = nn.BatchNorm1d(512)
+
+        self.up3 = nn.ConvTranspose1d(512, 256, kernel_size=4, stride=2, padding=1)
+        self.mrf3 = MRFBlock(256)
+        self.bn3 = nn.BatchNorm1d(256)
+
+        self.up4 = nn.ConvTranspose1d(256, 128, kernel_size=4, stride=2, padding=1)
+        self.mrf4 = MRFBlock(128)
+        self.bn4 = nn.BatchNorm1d(128)
+
+        self.up5 = nn.ConvTranspose1d(128, 64, kernel_size=4, stride=2, padding=1)
+        self.mrf5 = MRFBlock(64)
+        self.bn5 = nn.BatchNorm1d(64)
+
+        self.up6 = nn.ConvTranspose1d(64, 32, kernel_size=4, stride=2, padding=1)
+        self.mrf6 = MRFBlock(32)
+        self.bn6 = nn.BatchNorm1d(32)
+
+        self.final_conv = nn.Conv1d(32 + n_mels, 1, kernel_size=7, stride=1, padding=3)
         self.final_act = nn.Tanh()
 
     def forward(self, mel_spec):
         x = mel_spec.squeeze(1)  # (B, n_mels, T)
         mel_skip = x
 
-        x = self.initial_conv(x)  # (B, 128, T)
+        x = self.initial_conv(x)  # (B, 2048, T)
 
         # Stage 1
         x = self.up1(x)
@@ -143,14 +154,28 @@ class Generator(nn.Module):
         x = x + self.mel_proj4(mel4)
         x = self.mrf4(x)
 
+        # Stage 5
+        x = self.up5(x)
+        x = self.bn5(x)
+        mel5 = F.interpolate(mel_skip, size=x.shape[-1], mode='linear', align_corners=False)
+        x = x + self.mel_proj5(mel5)
+        x = self.mrf5(x)
+
+        # Stage 6
+        x = self.up6(x)
+        x = self.bn6(x)
+        mel6 = F.interpolate(mel_skip, size=x.shape[-1], mode='linear', align_corners=False)
+        x = x + self.mel_proj6(mel6)
+        x = self.mrf6(x)
+
         # Final skip connection (as before)
         if mel_skip.shape[-1] != x.shape[-1]:
             mel_skip = F.interpolate(mel_skip, size=x.shape[-1], mode='linear', align_corners=False)
         x = torch.cat([x, mel_skip], dim=1)
-        
+
         x = self.final_conv(x)
         x = self.final_act(x)
-        
+
         if x.shape[-1] != AUDIO_LENGTH:
             x = F.interpolate(x, size=AUDIO_LENGTH, mode='linear', align_corners=False)
         return x.squeeze(1)
@@ -199,9 +224,23 @@ class Discriminator(nn.Module):
         # return self.model(audio)
 
 class VocoderLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, sample_rate=12000, win_length=1024, hop_length=256, n_mels=96):
         super().__init__()
         self.stft_sizes = [(1024, 256, 1024), (2048, 512, 2048), (512, 128, 512)]
+
+        self.mel_transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=win_length,
+            win_length=win_length,
+            hop_length=hop_length,
+            n_mels=n_mels,
+            f_min=0.0,
+            f_max=sample_rate // 2,
+            power=1.0,
+            norm='slaney',
+            mel_scale='slaney'
+        )
+        self.db_transform = torchaudio.transforms.AmplitudeToDB(top_db=80)
 
     def spectral_convergence(self, real_mag, fake_mag):
         return torch.norm(real_mag - fake_mag, p='fro') / torch.norm(real_mag, p='fro')
@@ -231,19 +270,12 @@ class VocoderLoss(nn.Module):
         return loss / len(self.stft_sizes)
 
     def mel_loss(self, x_real, x_fake):
-        window = torch.hann_window(WIN_LENGTH, device=x_real.device)
-        mel_real = torch.stft(
-            x_real, WIN_LENGTH, hop_length=HOP_LENGTH, 
-            win_length=WIN_LENGTH, window=window, return_complex=True
-        )
-        mel_fake = torch.stft(
-            x_fake, WIN_LENGTH, hop_length=HOP_LENGTH, 
-            win_length=WIN_LENGTH, window=window, return_complex=True
-        )
-        mel_real = torch.abs(mel_real)
-        mel_fake = torch.abs(mel_fake)
-        return F.l1_loss(mel_real, mel_fake)
+        # Inputs should be [B, T] tensors (batched waveforms)
+        mel_real = self.db_transform(self.mel_transform(x_real))
+        mel_fake = self.db_transform(self.mel_transform(x_fake))
+        return F.l1_loss(mel_fake, mel_real)
     
+
     def feature_matching_loss(self, real_features, fake_features):
         loss = 0
         for f_real, f_fake in zip(real_features, fake_features):
@@ -260,7 +292,7 @@ class VocoderLoss(nn.Module):
         # Combine losses with weights
         total_loss = (
             loss_fm * 5.0 +  # λ_fm
-            loss_stft * 40.0 +  # λ_stft
+            loss_stft * 200.0 +  # λ_stft
             loss_mel * 150.0 +  # λ_mel
             loss_wav * 0.0     # λ_wav
         )
