@@ -5,8 +5,9 @@ from torch.utils.data import DataLoader
 import wandb
 from pathlib import Path
 from tqdm import tqdm
+import torch.nn.functional as F
 
-from models.gan import Generator, Discriminator
+from models.gan import Generator, Discriminator, VocoderLoss
 from utils import log_audio_samples, save_checkpoint
 from data.dataset import MelSpectrogramDataset
 from config import *
@@ -27,7 +28,7 @@ def train():
     
     # Initialize dataset and dataloader
     print("initializing dataset and dataloader...")
-    dataset = MelSpectrogramDataset(mels_dir="data/clean/mels", audio_dir="data/clean/audio")
+    dataset = MelSpectrogramDataset(mels_dir="src/data/clean/mels", audio_dir="src/data/clean/audio")
     dataloader = DataLoader(
         dataset,
         batch_size=BATCH_SIZE,
@@ -41,8 +42,9 @@ def train():
     generator = Generator(n_mels=N_MELS, audio_length=AUDIO_LENGTH).to(device)
     discriminator = Discriminator(audio_length=AUDIO_LENGTH).to(device)
     
-    # Loss function - using BCEWithLogitsLoss for better numerical stability
+    # Loss functions
     adversarial_loss = nn.BCEWithLogitsLoss()
+    vocoder_loss = VocoderLoss().to(device)
     
     # Optimizers
     optimizer_G = optim.Adam(generator.parameters(), lr=G_LEARNING_RATE, betas=(BETA1, BETA2))
@@ -69,9 +71,16 @@ def train():
             # Generate audio from mel spectrograms
             gen_audio = generator(mel_specs)
             
-            # Loss measures generator's ability to fool the discriminator
-            pred_fake = discriminator(gen_audio).mean(dim=2)  # (batch, 1)
-            g_loss = adversarial_loss(pred_fake, real_labels)  # Generator wants to fool D into thinking fake is real
+            # Get discriminator predictions and features for both real and fake
+            pred_fake, fake_features = discriminator(gen_audio, return_features=True)
+            pred_real, real_features = discriminator(real_audio, return_features=True)
+            
+            # Calculate all losses
+            losses = vocoder_loss(real_audio, gen_audio, real_features, fake_features)
+            
+            # Add adversarial loss
+            pred_fake = pred_fake.mean(dim=2)  # (batch, 1)
+            g_loss = adversarial_loss(pred_fake, real_labels) + losses['total']
             
             g_loss.backward()
             optimizer_G.step()
@@ -81,10 +90,19 @@ def train():
             # ---------------------
             optimizer_D.zero_grad()
             
-            pred_real = discriminator(real_audio).mean(dim=2)  # (batch, 1)
-            pred_fake = discriminator(gen_audio.detach()).mean(dim=2)  # (batch, 1)
-            real_loss = adversarial_loss(pred_real, real_labels)  # D should predict 0.9 for real samples
-            fake_loss = adversarial_loss(pred_fake, fake_labels)  # D should predict 0 for fake samples
+            d_real_labels = real_labels.clone()
+            d_fake_labels = fake_labels.clone()
+            
+            # LABEL FLIPPING
+            flip_mask = torch.rand(batch_size, 1) < 0.1
+            d_real_labels[flip_mask] = 0.0  # Flip real labels to fake
+            d_fake_labels[flip_mask] = 0.9  # Flip fake labels to real
+            
+            # Get discriminator predictions (no need for features here)
+            pred_real = discriminator(real_audio, return_features=False).mean(dim=2)  # (batch, 1)
+            pred_fake = discriminator(gen_audio.detach(), return_features=False).mean(dim=2)  # (batch, 1)
+            real_loss = adversarial_loss(pred_real, d_real_labels)  # D should predict 0.9 for real samples
+            fake_loss = adversarial_loss(pred_fake, d_fake_labels)  # D should predict 0 for fake samples
             d_loss = (real_loss + fake_loss) / 2
             
             d_loss.backward()
@@ -94,7 +112,9 @@ def train():
             if i % 100 == 0:
                 print(
                     f"[Epoch {epoch}/{NUM_EPOCHS}] [Batch {i}/{len(dataloader)}] "
-                    f"[D loss: {d_loss.item():.4f}] [G loss: {g_loss.item():.4f}]"
+                    f"[D loss: {d_loss.item():.4f}] [G loss: {g_loss.item():.4f}] "
+                    f"[STFT loss: {losses['stft'].item():.4f}] [Mel loss: {losses['mel'].item():.4f}] "
+                    f"[FM loss: {losses['fm'].item():.4f}] [Wav loss: {losses['wav'].item():.4f}]"
                 )
                 
                 # Log to wandb
@@ -102,6 +122,10 @@ def train():
                     "epoch": epoch,
                     "d_loss": d_loss.item(),
                     "g_loss": g_loss.item(),
+                    "stft_loss": losses['stft'].item(),
+                    "mel_loss": losses['mel'].item(),
+                    "fm_loss": losses['fm'].item(),
+                    "wav_loss": losses['wav'].item(),
                 })
                 
                 # Log sample audio

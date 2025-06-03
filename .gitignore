@@ -51,3 +51,6 @@ src/data/clean/*
 src/data/raw/*
 src/data/5s_duration/*
 src/wandb/*
+
+wandb
+checkpoints

@@ -32,7 +32,7 @@ def process_audio(audio_path, output_dir, audio_length=AUDIO_LENGTH, sample_rate
             audio = torch.nn.functional.pad(audio, (0, padding))
         
         # Create output path maintaining directory structure
-        rel_path = audio_path.relative_to(Path("data/raw/audio"))
+        rel_path = audio_path.relative_to(Path("src/data/raw/audio"))
         audio_output_path = output_dir / "clean" / "audio" / rel_path.parent / f"{rel_path.stem}.wav"
         
         # Create directory
@@ -65,7 +65,7 @@ def process_mel(mel_path, output_dir, audio_length=AUDIO_LENGTH, hop_length=HOP_
             mel = np.pad(mel, ((0, 0), (0, padding)))
         
         # Create output path maintaining directory structure
-        rel_path = mel_path.relative_to(Path("data/raw/mels"))
+        rel_path = mel_path.relative_to(Path("src/data/raw/mels"))
         mel_output_path = output_dir / "clean" / "mels" / rel_path.parent / f"{rel_path.stem}.npy"
         
         # Create directory
@@ -79,7 +79,7 @@ def process_mel(mel_path, output_dir, audio_length=AUDIO_LENGTH, hop_length=HOP_
         print(f"Error processing {mel_path}: {str(e)}")
         return False
 
-def preprocess_dataset(raw_dir="data/raw", output_dir="data"):
+def preprocess_dataset(raw_dir="src/data/raw", output_dir="src/data"):
     """Preprocess all audio files and mel spectrograms in the dataset."""
     raw_dir = Path(raw_dir)
     output_dir = Path(output_dir)
