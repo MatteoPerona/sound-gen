@@ -56,4 +56,5 @@ wandb
 checkpoints
 
 
-
+src/data/15s_clean
+src/BESTcheckpoints

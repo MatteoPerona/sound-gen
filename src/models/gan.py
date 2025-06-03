@@ -293,7 +293,7 @@ class VocoderLoss(nn.Module):
         total_loss = (
             loss_fm * 5.0 +  # λ_fm
             loss_stft * 200.0 +  # λ_stft
-            loss_mel * 150.0 +  # λ_mel
+            loss_mel * 50.0 +  # λ_mel
             loss_wav * 0.0     # λ_wav
         )
         

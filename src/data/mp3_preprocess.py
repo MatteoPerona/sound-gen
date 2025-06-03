@@ -32,16 +32,21 @@ for nn in range(100):
 def process_and_save(fpath):
     try:
         y, sr = librosa.load(fpath, sr=target_sr, mono=True)
-        # Truncate or pad to 30 seconds
-        if len(y) > target_length:
-            y = y[:target_length]
-        elif len(y) < target_length:
-            y = np.pad(y, (0, target_length - len(y)), 'constant')
-        # Prepare output path
+        # Split into 15-second chunks
+        chunk_length = target_sr * 15  # 15 seconds in samples
+        num_chunks = int(np.ceil(len(y) / chunk_length))
         rel_path = os.path.relpath(fpath, base_dir)
-        out_path = os.path.join(output_dir, os.path.splitext(rel_path)[0] + ".wav")
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        sf.write(out_path, y, target_sr)
+        base_out_path = os.path.join(output_dir, os.path.splitext(rel_path)[0])
+        for idx in range(num_chunks):
+            start = idx * chunk_length
+            end = min((idx + 1) * chunk_length, len(y))
+            chunk = y[start:end]
+            # Pad if last chunk is shorter than 15 seconds
+            if len(chunk) < chunk_length:
+                chunk = np.pad(chunk, (0, chunk_length - len(chunk)), 'constant')
+            out_path = f"{base_out_path}_chunk{idx:03d}.wav"
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            sf.write(out_path, chunk, target_sr)
         return True
     except Exception as e:
         print(f"Error processing {fpath}: {e}")

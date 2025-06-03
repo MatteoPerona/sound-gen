@@ -15,7 +15,7 @@ F_MIN = 0
 F_MAX = 6000
 
 # Training parameters
-BATCH_SIZE = 8
+BATCH_SIZE = 24
 NUM_EPOCHS = 100
 G_LEARNING_RATE = 1e-4
 D_LEARNING_RATE = 5e-5

@@ -35,7 +35,7 @@ def train():
         dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=4,
+        num_workers=6,
         pin_memory=True
     )
     
@@ -82,8 +82,9 @@ def train():
             
             # Add adversarial loss
             pred_fake = pred_fake.mean(dim=2)  # (batch, 1)
-            # g_loss = adversarial_loss(pred_fake, real_labels) + losses['total']
-            g_loss = losses['total']
+            a_loss = adversarial_loss(pred_fake, real_labels)  # D should predict 0.9 for real samples
+            g_loss = (a_loss * 75)  + (losses['total'])
+            # g_loss = losses['total']
             
             g_loss.backward()
             optimizer_G.step()
@@ -97,7 +98,7 @@ def train():
             d_fake_labels = fake_labels.clone()
             
             # LABEL FLIPPING
-            flip_mask = torch.rand(batch_size, 1) < 0.1
+            flip_mask = torch.rand(batch_size, 1) < (0.1) * (NUM_EPOCHS - epoch / NUM_EPOCHS) 
             d_real_labels[flip_mask] = 0.0  # Flip real labels to fake
             d_fake_labels[flip_mask] = 0.9  # Flip fake labels to real
             
@@ -126,6 +127,7 @@ def train():
                     "epoch": epoch,
                     "d_loss": d_loss.item(),
                     "g_loss": g_loss.item(),
+                    "adv_loss": a_loss.item(),
                     "stft_loss": losses['stft'].item(),
                     "mel_loss": losses['mel'].item(),
                     "fm_loss": losses['fm'].item(),
