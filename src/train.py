@@ -82,7 +82,8 @@ def train():
             
             # Add adversarial loss
             pred_fake = pred_fake.mean(dim=2)  # (batch, 1)
-            g_loss = adversarial_loss(pred_fake, real_labels) + losses['total']
+            # g_loss = adversarial_loss(pred_fake, real_labels) + losses['total']
+            g_loss = losses['total']
             
             g_loss.backward()
             optimizer_G.step()
